@@ -1,11 +1,11 @@
 import streamlit as st
-import tensorflow as tf
 import pickle
 import pandas as pd
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+import numpy as np
 import re
 from nltk.corpus import stopwords
 import nltk
+from numpy_model import NumpyModel
 
 # Set page config first
 st.set_page_config(page_title="Fake News Detector", page_icon="📰", layout="centered")
@@ -13,15 +13,37 @@ st.set_page_config(page_title="Fake News Detector", page_icon="📰", layout="ce
 @st.cache_resource
 def load_resources():
     import sys
-    import keras.preprocessing.text
-    sys.modules['keras.src.legacy'] = type('legacy', (), {'preprocessing': keras.preprocessing})()
-    sys.modules['keras.src.legacy.preprocessing'] = keras.preprocessing
-    sys.modules['keras.src.legacy.preprocessing.text'] = keras.preprocessing.text
+    import types
+    
+    # Create mock modules for keras.src.legacy so the tokenizer pickle can load
+    legacy_mod = types.ModuleType('keras.src.legacy')
+    preprocessing_mod = types.ModuleType('keras.src.legacy.preprocessing')
+    text_mod = types.ModuleType('keras.src.legacy.preprocessing.text')
+    
+    # We need the Tokenizer class - define a minimal one if keras isn't available
+    try:
+        import keras.preprocessing.text
+        text_mod.Tokenizer = keras.preprocessing.text.Tokenizer
+    except ImportError:
+        # Fallback: the pickle will bring its own class definition
+        pass
+    
+    legacy_mod.preprocessing = preprocessing_mod
+    preprocessing_mod.text = text_mod
+    sys.modules['keras'] = sys.modules.get('keras', types.ModuleType('keras'))
+    sys.modules['keras.src'] = types.ModuleType('keras.src')
+    sys.modules['keras.src.legacy'] = legacy_mod
+    sys.modules['keras.src.legacy.preprocessing'] = preprocessing_mod
+    sys.modules['keras.src.legacy.preprocessing.text'] = text_mod
     
     nltk.download('stopwords', quiet=True)
-    model = tf.keras.models.load_model("model.h5", compile=False)
+    
+    # Load numpy-based model (no TensorFlow needed!)
+    model = NumpyModel("model_weights.npz")
+    
     with open("tokenizer.pkl", "rb") as f:
         tokenizer = pickle.load(f)
+    
     stop_words = set(stopwords.words('english'))
     return model, tokenizer, stop_words
 
@@ -36,13 +58,22 @@ def clean_text(text):
     text = [word for word in text if word not in stop_words]
     return " ".join(text)
 
+def pad_sequences_np(sequences, maxlen):
+    result = np.zeros((len(sequences), maxlen), dtype=np.int32)
+    for i, seq in enumerate(sequences):
+        if len(seq) > maxlen:
+            result[i] = np.array(seq[-maxlen:])
+        else:
+            result[i, maxlen - len(seq):] = np.array(seq)
+    return result
+
 def predict_news(text):
     if text.strip() == "":
         return None, None, None
     text = clean_text(text)
     seq = tokenizer.texts_to_sequences([text])
-    padded = pad_sequences(seq, maxlen=500)
-    pred_real = float(model.predict(padded, verbose=0)[0][0])
+    padded = pad_sequences_np(seq, maxlen=500)
+    pred_real = float(model.predict(padded)[0][0])
     pred_fake = 1.0 - pred_real
     
     label = "Real News" if pred_real > 0.6 else "Fake News"
@@ -67,7 +98,7 @@ st.markdown("""
         margin-bottom: 30px;
     }
     .stProgress .st-bo {
-        background-color: #28a745; /* green for real */
+        background-color: #28a745;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -118,9 +149,10 @@ with tab2:
             if "text" in df.columns.str.lower():
                 text_col = [col for col in df.columns if col.lower() == 'text'][0]
                 with st.spinner("Processing documents..."):
-                    predictions = df[text_col].apply(lambda x: predict_news(x) if isinstance(x, str) else (None, None))
+                    predictions = df[text_col].apply(lambda x: predict_news(x) if isinstance(x, str) else (None, None, None))
                     df["prediction"] = [p[0] for p in predictions]
-                    df["confidence"] = [p[1] for p in predictions]
+                    df["confidence_real"] = [p[1] for p in predictions]
+                    df["confidence_fake"] = [p[2] for p in predictions]
                     
                     st.success("Processing complete!")
                     st.dataframe(df, use_container_width=True)

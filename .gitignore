@@ -3,3 +3,5 @@ __pycache__/
 model_backup.h5
 fix_model.py
 test_model.py
+export_model.py
+verify_numpy_model.py
