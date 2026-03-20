@@ -6,11 +6,11 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 import re
 from nltk.corpus import stopwords
 import nltk
-nltk.download('stopwords')
+nltk.download('stopwords', quiet=True)
 app = Flask(__name__)
 
 # Load model + tokenizer
-model = tf.keras.models.load_model("model.h5")
+model = tf.keras.models.load_model("model.h5", compile=False)
 tokenizer = pickle.load(open("tokenizer.pkl", "rb"))
 
 stop_words = set(stopwords.words('english'))
@@ -57,4 +57,6 @@ def home():
     return render_template("index.html", result=result, confidence=confidence, table=table)
 
 import os
-app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
