@@ -5,3 +5,4 @@ fix_model.py
 test_model.py
 export_model.py
 verify_numpy_model.py
+export_tokenizer.py

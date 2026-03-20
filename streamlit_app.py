@@ -1,5 +1,5 @@
 import streamlit as st
-import pickle
+import json
 import pandas as pd
 import numpy as np
 import re
@@ -10,39 +10,35 @@ from numpy_model import NumpyModel
 # Set page config first
 st.set_page_config(page_title="Fake News Detector", page_icon="📰", layout="centered")
 
+class SimpleTokenizer:
+    """Minimal tokenizer that replicates Keras Tokenizer.texts_to_sequences."""
+    def __init__(self, word_index, num_words=None):
+        self.word_index = word_index
+        self.num_words = num_words
+    
+    def texts_to_sequences(self, texts):
+        result = []
+        for text in texts:
+            seq = []
+            for word in text.lower().split():
+                idx = self.word_index.get(word)
+                if idx is not None:
+                    if self.num_words is None or idx < self.num_words:
+                        seq.append(idx)
+            result.append(seq)
+        return result
+
 @st.cache_resource
 def load_resources():
-    import sys
-    import types
-    
-    # Create mock modules for keras.src.legacy so the tokenizer pickle can load
-    legacy_mod = types.ModuleType('keras.src.legacy')
-    preprocessing_mod = types.ModuleType('keras.src.legacy.preprocessing')
-    text_mod = types.ModuleType('keras.src.legacy.preprocessing.text')
-    
-    # We need the Tokenizer class - define a minimal one if keras isn't available
-    try:
-        import keras.preprocessing.text
-        text_mod.Tokenizer = keras.preprocessing.text.Tokenizer
-    except ImportError:
-        # Fallback: the pickle will bring its own class definition
-        pass
-    
-    legacy_mod.preprocessing = preprocessing_mod
-    preprocessing_mod.text = text_mod
-    sys.modules['keras'] = sys.modules.get('keras', types.ModuleType('keras'))
-    sys.modules['keras.src'] = types.ModuleType('keras.src')
-    sys.modules['keras.src.legacy'] = legacy_mod
-    sys.modules['keras.src.legacy.preprocessing'] = preprocessing_mod
-    sys.modules['keras.src.legacy.preprocessing.text'] = text_mod
-    
     nltk.download('stopwords', quiet=True)
     
     # Load numpy-based model (no TensorFlow needed!)
     model = NumpyModel("model_weights.npz")
     
-    with open("tokenizer.pkl", "rb") as f:
-        tokenizer = pickle.load(f)
+    # Load tokenizer from JSON (no Keras needed!)
+    with open("tokenizer.json", "r") as f:
+        tok_data = json.load(f)
+    tokenizer = SimpleTokenizer(tok_data["word_index"], tok_data.get("num_words"))
     
     stop_words = set(stopwords.words('english'))
     return model, tokenizer, stop_words
