@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+model_backup.h5
+fix_model.py
+test_model.py
